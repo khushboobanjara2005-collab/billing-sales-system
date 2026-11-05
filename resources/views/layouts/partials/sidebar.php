@@ -5,8 +5,8 @@ $currentRoute = (string) ($_GET['r'] ?? '');
 $navigation = [
     'Dashboard' => 'dashboard',
     'Companies' => 'companies/index',
-    'Invoices' => 'invoices',
-    'Payments' => 'payments',
+    'Invoices' => 'invoices/index',
+    'Payments' => 'payments/index',
     'Reports' => 'reports',
 ];
 ?>

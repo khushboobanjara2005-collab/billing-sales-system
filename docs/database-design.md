@@ -78,3 +78,13 @@ The payments table rejects non-positive amounts with a CHECK constraint. The
 application must additionally lock and check the invoice balance in the same
 transaction before inserting a payment; a row-level CHECK cannot enforce an
 aggregate across multiple payment records.
+
+Invoice entry calculates each line amount, subtotal, CGST, SGST, and total on
+the server with integer paise arithmetic. GST rates are stored on each invoice.
+The browser preview is only a convenience; its totals are never trusted for
+database writes. Optional invoice examples are in
+`database/seeds/demo_invoices.sql` and require the sample companies from
+`database/seeds/demo_data.sql`. Optional payment examples are in
+`database/seeds/demo_payments.sql`; import them after the company and invoice
+examples. The company ledger derives paid, pending, status, and running
+outstanding values from payment rows.

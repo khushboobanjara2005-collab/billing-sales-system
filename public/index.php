@@ -8,7 +8,18 @@ use App\Core\Database;
 use App\Core\Router;
 use App\Core\Session;
 use App\Controllers\CompaniesController;
+use App\Controllers\CompanyLedgerController;
+use App\Controllers\DashboardController;
+use App\Controllers\InvoicesController;
+use App\Controllers\PaymentsController;
+use App\Controllers\ReportsController;
 use App\Models\Company;
+use App\Models\Invoice;
+use App\Models\InvoiceItem;
+use App\Models\Payment;
+use App\Models\Reporting;
+use App\Services\InvoiceService;
+use App\Services\PaymentService;
 
 Session::start();
 
@@ -47,17 +58,37 @@ $router->post('companies/delete', static function () use ($companyController): v
 $router->get('companies/show', static function () use ($companyController): void {
     $companyController()->show();
 });
+$router->get('companies/ledger', static function (): void {
+    $ledger = new CompanyLedgerController(new Company(Database::connection()));
+    $ledger->show();
+});
+$invoiceController = static function (): InvoicesController {
+    $pdo = Database::connection();
+    return new InvoicesController(
+        new Invoice($pdo), new InvoiceItem($pdo), new Company($pdo), new InvoiceService($pdo)
+    );
+};
+$router->get('invoices/index', static function () use ($invoiceController): void { $invoiceController()->index(); });
+$router->get('invoices/create', static function () use ($invoiceController): void { $invoiceController()->create(); });
+$router->post('invoices/store', static function () use ($invoiceController): void { $invoiceController()->store(); });
+$router->get('invoices/show', static function () use ($invoiceController): void { $invoiceController()->show(); });
+$router->get('invoices/edit', static function () use ($invoiceController): void { $invoiceController()->edit(); });
+$router->post('invoices/update', static function () use ($invoiceController): void { $invoiceController()->update(); });
+$router->post('invoices/delete', static function () use ($invoiceController): void { $invoiceController()->delete(); });
 $router->get('dashboard', static function (): void {
-    \App\Core\View::render('placeholder', ['title' => 'Dashboard']);
+    (new DashboardController(new Reporting(Database::connection())))->index();
 });
-$router->get('invoices', static function (): void {
-    \App\Core\View::render('placeholder', ['title' => 'Invoices']);
-});
-$router->get('payments', static function (): void {
-    \App\Core\View::render('placeholder', ['title' => 'Payments']);
-});
+$paymentController = static function (): PaymentsController {
+    $pdo = Database::connection();
+    return new PaymentsController(new Payment($pdo), new Company($pdo), new PaymentService($pdo));
+};
+$router->get('payments/index', static function () use ($paymentController): void { $paymentController()->index(); });
+$router->get('payments/create', static function () use ($paymentController): void { $paymentController()->create(); });
+$router->post('payments/store', static function () use ($paymentController): void { $paymentController()->store(); });
+$router->get('payments/show', static function () use ($paymentController): void { $paymentController()->show(); });
+$router->post('payments/delete', static function () use ($paymentController): void { $paymentController()->delete(); });
 $router->get('reports', static function (): void {
-    \App\Core\View::render('placeholder', ['title' => 'Reports']);
+    (new ReportsController(new Reporting(Database::connection())))->index();
 });
 $router->get('health', static function (): void {
     $databaseReachable = false;

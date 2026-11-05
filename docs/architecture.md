@@ -12,36 +12,45 @@ status information. PDO uses exceptions, native prepared statements, and
 `utf8mb4`. Database details and stack traces go to `storage/logs/app.log`;
 browser responses remain generic.
 
-## Layers and planned responsibility
+## Layers
 
 - `public/`: web entry point and local browser assets; Apache directory listing
   is disabled.
-- `app/Controllers/`: later request coordination between routes, validation,
-  services, and views. No CRUD controller exists in this foundation.
-- `app/Models/`: one implemented model per table, containing PDO
-  prepared-statement queries only. Screen-specific create, update, and delete
-  operations are deferred until those features are built.
-- `app/Services/`: business rules and transactions only. The implemented
-  `PaymentService` serializes payment checks against the invoice row; invoice
-  entry and payment screens remain deferred.
-- `app/Core/`: implemented shared infrastructure (`Database`, `Router`,
-  `Session`, `Csrf`).
-- `app/Helpers/`: shared stateless helpers when a real feature needs them.
+- `app/Controllers/`: coordinates company, invoice, payment, company-ledger,
+  dashboard, and report requests, validation, services, and views.
+- `app/Models/`: table-specific PDO prepared-statement queries, plus reporting
+  queries for dashboard and report summaries.
+- `app/Services/`: business rules and transactions. `InvoiceService` calculates
+  invoice amounts in paise and handles atomic create, update, and delete.
+  `PaymentService` locks the invoice, checks its balance, and records a payment
+  in one transaction.
+- `app/Core/`: shared infrastructure (`Database`, `Router`, `View`, `Validator`,
+  `Csrf`, `Session`, and `Flash`).
+- `app/Helpers/`: shared stateless money formatting helper.
 - `config/`: local environment configuration conventions; `.env` is not
   committed and is denied by the project-root Apache rules.
 - `database/`: importable schema, migration, and future seed files.
-- `resources/views/`: later presentation templates. Views must not contain SQL
-  and must escape dynamic output with `htmlspecialchars`.
+- `resources/views/`: shared layout and company, invoice, payment, ledger,
+  dashboard, and report presentation templates. Views contain no SQL and
+  escape dynamic output with `htmlspecialchars`.
 - `storage/logs/`: private application diagnostics, excluded from Git and
   denied by Apache.
-- `tests/`: plain PHP checks, not a PHPUnit dependency.
+- `tests/`: plain PHP database connectivity check, not a PHPUnit dependency.
+
+The dashboard chart is drawn by a local vanilla JavaScript canvas script.
+Report and invoice pages use browser print styles and need no PDF library.
 
 ## Request and session safety
 
 The front controller starts a strict-mode PHP session with HttpOnly and
 SameSite=Lax cookies. Any POST request is rejected unless it includes the
-session CSRF token as `_csrf` or `X-CSRF-TOKEN`. No write routes or forms exist
-yet. Future forms must request `Csrf::token()` and include it.
+session CSRF token as `_csrf` or `X-CSRF-TOKEN`. Create, update, and delete
+actions use POST and redirect after handling the request.
+
+Invoice creation serializes invoice-number allocation by locking a company row
+inside its transaction. The server calculates line amounts and GST using
+integer paise; submitted browser preview totals are not persisted. Updating
+replaces invoice items in the same transaction.
 
 `PaymentService::record` uses one database transaction: it locks the invoice
 row with `SELECT ... FOR UPDATE`, calculates the outstanding amount from

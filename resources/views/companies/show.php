@@ -2,6 +2,7 @@
 <section class="page-heading">
     <div><p class="eyebrow">COMPANIES</p><h1>Company details</h1></div>
     <div class="heading-actions">
+        <a class="button primary" href="<?= View::escape($baseUrl) ?>/index.php?r=companies/ledger&amp;id=<?= (int) $company['company_id'] ?>">Company ledger</a>
         <a class="button secondary" href="<?= View::escape($baseUrl) ?>/index.php?r=companies/edit&amp;id=<?= (int) $company['company_id'] ?>">Edit company</a>
         <a class="button secondary" href="<?= View::escape($baseUrl) ?>/index.php?r=companies/index">Back</a>
     </div>

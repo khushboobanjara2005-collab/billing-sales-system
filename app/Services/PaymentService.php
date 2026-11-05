@@ -10,7 +10,6 @@ use DomainException;
 use InvalidArgumentException;
 use PDO;
 use Throwable;
-use UnexpectedValueException;
 
 final class PaymentService
 {
@@ -29,12 +28,11 @@ final class PaymentService
         string $amount,
         string $paymentMethod
     ): int {
-        if ($invoiceId < 1 || !$this->isValidDate($paymentDate)) {
-            throw new InvalidArgumentException('A valid invoice and payment date are required.');
+        if ($invoiceId < 1 || !$this->isValidDate($paymentDate) || $paymentDate > date('Y-m-d')) {
+            throw new InvalidArgumentException('Choose an invoice and a valid payment date that is not in the future.');
         }
-        $paymentMethod = trim($paymentMethod);
-        if ($paymentMethod === '' || strlen($paymentMethod) > 50) {
-            throw new InvalidArgumentException('A payment method of up to 50 characters is required.');
+        if (!in_array($paymentMethod, ['Cash', 'UPI', 'Bank Transfer', 'Cheque'], true)) {
+            throw new InvalidArgumentException('Choose a valid payment method.');
         }
 
         $paymentPaise = $this->toPaise($amount);
@@ -52,7 +50,7 @@ final class PaymentService
             $totalPaise = $this->toPaise((string) $invoice['total_amount']);
             $paidPaise = $this->toPaise($this->payments->totalForInvoice($invoiceId));
             if ($paymentPaise > $totalPaise - $paidPaise) {
-                throw new DomainException('Payment exceeds the outstanding balance.');
+                throw new DomainException('Payment exceeds the outstanding balance of ₹' . $this->fromPaise(max(0, $totalPaise - $paidPaise)) . '.');
             }
 
             $paymentId = $this->payments->create(
@@ -63,6 +61,28 @@ final class PaymentService
             );
             $this->pdo->commit();
             return $paymentId;
+        } catch (Throwable $error) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $error;
+        }
+    }
+
+    public function delete(int $paymentId): void
+    {
+        $payment = $this->payments->findDetails($paymentId);
+        if ($payment === null) {
+            throw new DomainException('Payment not found.');
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            if ($this->invoices->findForUpdate((int) $payment['invoice_id']) === null) {
+                throw new DomainException('Invoice not found.');
+            }
+            $this->payments->delete($paymentId);
+            $this->pdo->commit();
         } catch (Throwable $error) {
             if ($this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
