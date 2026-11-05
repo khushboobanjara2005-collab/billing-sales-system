@@ -41,7 +41,7 @@ final class Validator
 
     private static function length(string $value): int
     {
-        preg_match_all('/./us', $value, $characters);
-        return count($characters[0]);
+        $count = preg_match_all('/./us', $value, $characters);
+        return $count === false ? PHP_INT_MAX : $count;
     }
 }

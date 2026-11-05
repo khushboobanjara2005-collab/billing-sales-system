@@ -13,7 +13,8 @@
     <?php require __DIR__ . '/partials/sidebar.php'; ?>
     <main id="main-content" class="main-content">
         <?php if (!empty($message)): ?>
-            <div class="flash <?= View::escape($messageType ?? 'success') ?>" role="status"><?= View::escape($message) ?></div>
+            <div class="flash <?= View::escape($messageType ?? 'success') ?>"
+                 role="<?= ($messageType ?? 'success') === 'error' ? 'alert' : 'status' ?>"><?= View::escape($message) ?></div>
         <?php endif; ?>
         <?= $content ?>
     </main>

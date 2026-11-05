@@ -94,7 +94,7 @@ final class CompaniesController
         ]);
     }
 
-    private function saveError(PDOException $error, string $route, array $values): never {
+    private function saveError(PDOException $error, string $route, array $values): void {
         app_log_error($error);
         $duplicate = (string) $error->getCode() === '23000';
         Flash::set('message', $duplicate ? 'This GSTIN is already registered.' : 'Unable to save company. Please try again.');
@@ -104,7 +104,7 @@ final class CompaniesController
         ]);
     }
 
-    private function invalidForm(string $route, array $result): never {
+    private function invalidForm(string $route, array $result): void {
         Flash::set('old', $result['values']);
         Flash::set('errors', $result['errors']);
         $this->redirect($route);
@@ -130,18 +130,18 @@ final class CompaniesController
         return (int) $id;
     }
 
-    private function redirectWithMessage(string $route, string $message, string $type = 'success'): never {
+    private function redirectWithMessage(string $route, string $message, string $type = 'success'): void {
         Flash::set('message', $message);
         Flash::set('message_type', $type);
         $this->redirect($route);
     }
 
-    private function redirect(string $route): never {
+    private function redirect(string $route): void {
         header('Location: ' . \App\Core\Router::baseUrl() . '/index.php?r=' . $route, true, 303);
         exit;
     }
 
-    private function notFound(): never {
+    private function notFound(): void {
         http_response_code(404);
         echo 'Company not found.';
         exit;
