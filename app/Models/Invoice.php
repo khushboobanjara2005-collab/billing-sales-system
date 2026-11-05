@@ -9,24 +9,26 @@ final class Invoice
 {
     public function __construct(private PDO $pdo) {}
 
-    public function findForUpdate(int $invoiceId): ?array
+    public function findForUpdate(int $businessId, int $invoiceId): ?array
     {
         $statement = $this->pdo->prepare(
-            'SELECT invoice_id, total_amount FROM invoices WHERE invoice_id = :invoice_id FOR UPDATE'
+            'SELECT invoice_id, total_amount FROM invoices
+             WHERE business_id = :business_id AND invoice_id = :invoice_id FOR UPDATE'
         );
-        $statement->execute(['invoice_id' => $invoiceId]);
+        $statement->execute(['business_id' => $businessId, 'invoice_id' => $invoiceId]);
         $invoice = $statement->fetch();
         return is_array($invoice) ? $invoice : null;
     }
 
-    public function list(string $number, int $companyId, string $from, string $to, string $status, int $limit, int $offset): array
+    public function list(int $businessId, string $number, int $companyId, string $from, string $to, string $status, int $limit, int $offset): array
     {
-        [$where, $parameters] = $this->filters($number, $companyId, $from, $to);
+        [$where, $parameters] = $this->filters($businessId, $number, $companyId, $from, $to);
         if ($status !== '') {
             $where .= ($where === '' ? ' WHERE ' : ' AND ') . $this->statusExpression() . ' = :status';
             $parameters['status'] = $status;
         }
-        $base = ' FROM invoices i JOIN companies c ON c.company_id = i.company_id
+        $base = ' FROM invoices i JOIN companies c
+                  ON c.company_id = i.company_id AND c.business_id = i.business_id
                   LEFT JOIN (SELECT invoice_id, SUM(amount) paid_amount FROM payments GROUP BY invoice_id) p
                   ON p.invoice_id = i.invoice_id ' . $where;
         $count = $this->pdo->prepare('SELECT COUNT(*)' . $base);
@@ -44,18 +46,19 @@ final class Invoice
         return ['rows' => $statement->fetchAll(), 'total' => $total];
     }
 
-    public function findDetails(int $invoiceId): ?array
+    public function findDetails(int $businessId, int $invoiceId): ?array
     {
         $statement = $this->pdo->prepare(
             'SELECT i.*, c.company_name, c.gstin, c.phone, c.email, c.address,
                     COALESCE(p.paid_amount, 0.00) AS paid_amount,
                     i.total_amount - COALESCE(p.paid_amount, 0.00) AS pending_amount,
                     ' . $this->statusExpression() . ' AS payment_status
-             FROM invoices i JOIN companies c ON c.company_id = i.company_id
+             FROM invoices i JOIN companies c
+               ON c.company_id = i.company_id AND c.business_id = i.business_id
              LEFT JOIN (SELECT invoice_id, SUM(amount) paid_amount FROM payments GROUP BY invoice_id) p
-             ON p.invoice_id = i.invoice_id WHERE i.invoice_id = :id'
+             ON p.invoice_id = i.invoice_id WHERE i.business_id = :business_id AND i.invoice_id = :id'
         );
-        $statement->execute(['id' => $invoiceId]);
+        $statement->execute(['business_id' => $businessId, 'id' => $invoiceId]);
         $row = $statement->fetch();
         return is_array($row) ? $row : null;
     }
@@ -64,44 +67,51 @@ final class Invoice
     {
         $statement = $this->pdo->prepare(
             'INSERT INTO invoices
-             (invoice_number, company_id, invoice_date, subtotal, cgst_rate, sgst_rate, cgst, sgst, total_amount)
-             VALUES (:invoice_number, :company_id, :invoice_date, :subtotal, :cgst_rate, :sgst_rate, :cgst, :sgst, :total_amount)'
+             (business_id, invoice_number, company_id, invoice_date, subtotal, cgst_rate, sgst_rate, tax_type,
+              cgst, sgst, igst, round_off, total_amount)
+             VALUES (:business_id, :invoice_number, :company_id, :invoice_date, :subtotal, :cgst_rate, :sgst_rate, :tax_type,
+                     :cgst, :sgst, :igst, :round_off, :total_amount)'
         );
         $statement->execute($invoice);
         return (int) $this->pdo->lastInsertId();
     }
 
-    public function update(int $invoiceId, array $invoice): void
+    public function update(int $businessId, int $invoiceId, array $invoice): void
     {
+        $invoice['business_id'] = $businessId;
         $invoice['invoice_id'] = $invoiceId;
         $statement = $this->pdo->prepare(
-            'UPDATE invoices SET company_id = :company_id, invoice_date = :invoice_date,
-             subtotal = :subtotal, cgst_rate = :cgst_rate, sgst_rate = :sgst_rate,
-             cgst = :cgst, sgst = :sgst, total_amount = :total_amount
-             WHERE invoice_id = :invoice_id'
+            'UPDATE invoices SET business_id = :business_id, company_id = :company_id, invoice_date = :invoice_date,
+             subtotal = :subtotal, cgst_rate = :cgst_rate, sgst_rate = :sgst_rate, tax_type = :tax_type,
+             cgst = :cgst, sgst = :sgst, igst = :igst, round_off = :round_off, total_amount = :total_amount
+             WHERE business_id = :where_business_id AND invoice_id = :invoice_id'
         );
+        $invoice['where_business_id'] = $businessId;
         $statement->execute($invoice);
     }
 
-    public function delete(int $invoiceId): void
-    {
-        $statement = $this->pdo->prepare('DELETE FROM invoices WHERE invoice_id = :id');
-        $statement->execute(['id' => $invoiceId]);
-    }
-
-    public function numbersForYear(int $year): array
+    public function delete(int $businessId, int $invoiceId): void
     {
         $statement = $this->pdo->prepare(
-            'SELECT invoice_number FROM invoices WHERE invoice_number LIKE :prefix FOR UPDATE'
+            'DELETE FROM invoices WHERE business_id = :business_id AND invoice_id = :id'
         );
-        $statement->execute(['prefix' => 'INV-' . $year . '-%']);
+        $statement->execute(['business_id' => $businessId, 'id' => $invoiceId]);
+    }
+
+    public function numbersForYear(int $businessId, int $year): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT invoice_number FROM invoices WHERE business_id = :business_id
+             AND invoice_number LIKE :prefix FOR UPDATE'
+        );
+        $statement->execute(['business_id' => $businessId, 'prefix' => 'INV-' . $year . '-%']);
         return $statement->fetchAll(PDO::FETCH_COLUMN);
     }
 
-    private function filters(string $number, int $companyId, string $from, string $to): array
+    private function filters(int $businessId, string $number, int $companyId, string $from, string $to): array
     {
-        $where = [];
-        $parameters = [];
+        $where = ['i.business_id = :business_id'];
+        $parameters = ['business_id' => $businessId];
         if ($number !== '') { $where[] = 'i.invoice_number LIKE :number'; $parameters['number'] = '%' . $number . '%'; }
         if ($companyId > 0) { $where[] = 'i.company_id = :company_id'; $parameters['company_id'] = $companyId; }
         if ($from !== '') { $where[] = 'i.invoice_date >= :date_from'; $parameters['date_from'] = $from; }

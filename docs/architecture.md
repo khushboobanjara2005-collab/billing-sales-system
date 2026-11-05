@@ -3,65 +3,77 @@
 ## Request flow
 
 Apache serves `public/` as the web entry point. `public/index.php` loads
-`bootstrap.php`, which reads the ignored local `.env`, registers the small
-`App\` autoloader, and installs generic error handling. `Router` dispatches the
-query-string route (`?r=health`); it does not depend on `mod_rewrite`.
+`bootstrap.php`, starts a strict PHP session, checks authentication, loads the
+authenticated user's owned business list, verifies the active business, checks
+CSRF tokens on every POST, then dispatches the query-string route. No
+`mod_rewrite` rule is required.
 
-The health route checks the database using `Database` and returns only safe
-status information. PDO uses exceptions, native prepared statements, and
-`utf8mb4`. Database details and stack traces go to `storage/logs/app.log`;
-browser responses remain generic.
+The public routes are sign-in, registration, password-help, and health. All
+module routes require a logged-in user and an owned active business. The first
+account can be registered only from localhost; its registration transaction
+claims the existing seller profile and assigns all legacy companies/invoices
+to that first business.
 
 ## Layers
 
 - `public/`: web entry point and local browser assets; Apache directory listing
   is disabled.
-- `app/Controllers/`: coordinates company, invoice, payment, company-ledger,
-  dashboard, and report requests, validation, services, and views.
-- `app/Models/`: table-specific PDO prepared-statement queries, plus reporting
-  queries for dashboard and report summaries.
-- `app/Services/`: business rules and transactions. `InvoiceService` calculates
-  invoice amounts in paise and handles atomic create, update, and delete.
-  `PaymentService` locks the invoice, checks its balance, and records a payment
-  in one transaction.
-- `app/Core/`: shared infrastructure (`Database`, `Router`, `View`, `Validator`,
-  `Csrf`, `Session`, and `Flash`).
-- `app/Helpers/`: shared stateless money formatting helper.
-- `config/`: local environment configuration conventions; `.env` is not
-  committed and is denied by the project-root Apache rules.
-- `database/`: importable schema, migration, and future seed files.
-- `resources/views/`: shared layout and company, invoice, payment, ledger,
-  dashboard, and report presentation templates. Views contain no SQL and
-  escape dynamic output with `htmlspecialchars`.
-- `storage/logs/`: private application diagnostics, excluded from Git and
-  denied by Apache.
-- `tests/`: plain PHP database connectivity check, not a PHPUnit dependency.
+- `app/Controllers/`: coordinates account, business, company, invoice,
+  payment, ledger, dashboard, and report requests.
+- `app/Models/`: prepared PDO queries. Company, invoice, payment, and reporting
+  queries are scoped to the active business; business profile queries verify
+  `owner_user_id`.
+- `app/Services/`: invoice calculations and transactional invoice/payment
+  rules. Invoice numbering locks the selected business row. Payment recording
+  locks the selected business's invoice and checks its balance before insert.
+- `app/Core/`: database connection, router, views, validation, CSRF, session,
+  authentication, active-business context, and flash messages.
+- `resources/views/`: presentation-only templates. Dynamic values are escaped
+  with `htmlspecialchars`.
+- `database/`: canonical schema, additive migrations, and optional demo seeds.
+- `storage/logs/`: private diagnostics, excluded from Git and denied by Apache.
 
-The dashboard chart is drawn by a local vanilla JavaScript canvas script.
-Report and invoice pages use browser print styles and need no PDF library.
+The dashboard chart uses local vanilla JavaScript. Invoice and report pages use
+browser print styles. No external framework or PDF library is required.
 
-## Request and session safety
+## Authentication and tenant isolation
 
-The front controller starts a strict-mode PHP session with HttpOnly and
-SameSite=Lax cookies. Any POST request is rejected unless it includes the
-session CSRF token as `_csrf` or `X-CSRF-TOKEN`. Create, update, and delete
-actions use POST and redirect after handling the request.
+Passwords are stored as `password_hash()` output and checked with
+`password_verify()`. Successful sign-in regenerates the session ID. Cookies are
+HttpOnly, SameSite=Lax, and Secure when HTTPS is active; strict session mode and
+cookie-only sessions are enabled. Sign-in failures are rate-limited per
+email/IP-derived key, and all POST actions require CSRF.
 
-Invoice creation serializes invoice-number allocation by locking a company row
-inside its transaction. The server calculates line amounts and GST using
-integer paise; submitted browser preview totals are not persisted. Updating
-replaces invoice items in the same transaction.
+Each business belongs to one `owner_user_id`; this version does not implement
+shared memberships. The business switch POST accepts an ID only after
+`Business::findOwned()` confirms that the logged-in user owns it. Module queries
+include the active `business_id`; IDs received from the browser are never
+treated as authorization. Invoices are constrained to companies from the same
+business by a composite foreign key. Payments and items inherit scope through
+their parent invoice.
 
-`PaymentService::record` uses one database transaction: it locks the invoice
-row with `SELECT ... FOR UPDATE`, calculates the outstanding amount from
-payments, rejects amounts above that balance using integer paise arithmetic,
-inserts the payment, and commits. Paid amount, pending balance, and payment
-status remain derived values, never stored columns.
+Migration 003 leaves legacy business IDs nullable until the first registration.
+That registration locks `installation_state`, creates the first business from
+the existing seller profile, assigns legacy companies and invoices in the same
+transaction, and marks the claim complete. Do not expose a not-yet-initialized
+installation to the network.
 
-## Known limitation and later phase
+## Invoice and payment rules
 
-There is **no authentication or authorization** in this foundation. It is
-intended for local college demonstration only and must not be exposed as a
-public or shared production application. A later optional phase should add
-login, password hashing, authorization checks, logout/session renewal, and
-access-control tests before adding shared or remote access.
+`InvoiceService` calculates item amounts, taxes, and totals in integer paise.
+GST is either CGST+SGST or IGST, never both for one invoice. Invoice numbers
+come from the selected business's prefix and locked sequence. The browser
+preview is informational only; the server recalculates all values.
+
+`PaymentService::record` uses one transaction with `SELECT ... FOR UPDATE`,
+checks the selected invoice's outstanding amount, rejects overpayment, inserts
+the payment, and commits. Paid amount, pending balance, and payment status are
+derived from payment rows.
+
+## Known limitations
+
+- Password-reset email delivery is not implemented. The forgot-password page
+  gives a generic local-installation message and does not change account data.
+- Remember Me and shared business memberships are not implemented.
+- This academic application still needs deployment hardening, backup policy,
+  HTTPS, and mail configuration before public use.

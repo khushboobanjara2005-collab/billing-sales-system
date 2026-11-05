@@ -11,17 +11,18 @@ final class Company
     {
     }
 
-    public function paginate(string $searchTerm, int $limit, int $offset): array
+    public function paginate(int $businessId, string $searchTerm, int $limit, int $offset): array
     {
         $statement = $this->pdo->prepare(
             'SELECT company_id, company_name, gstin, phone, email
              FROM companies
-             WHERE company_name LIKE :name OR gstin LIKE :gstin
-                OR phone LIKE :phone OR email LIKE :email
+             WHERE business_id = :business_id AND (company_name LIKE :name OR gstin LIKE :gstin
+                OR phone LIKE :phone OR email LIKE :email)
              ORDER BY company_name, company_id
              LIMIT :limit OFFSET :offset'
         );
         $like = '%' . $searchTerm . '%';
+        $statement->bindValue(':business_id', $businessId, PDO::PARAM_INT);
         $statement->bindValue(':name', $like);
         $statement->bindValue(':gstin', $like);
         $statement->bindValue(':phone', $like);
@@ -33,32 +34,40 @@ final class Company
 
         $count = $this->pdo->prepare(
             'SELECT COUNT(*) FROM companies
-             WHERE company_name LIKE :name OR gstin LIKE :gstin
-                OR phone LIKE :phone OR email LIKE :email'
+             WHERE business_id = :business_id AND (company_name LIKE :name OR gstin LIKE :gstin
+                OR phone LIKE :phone OR email LIKE :email)'
         );
-        $count->execute(['name' => $like, 'gstin' => $like, 'phone' => $like, 'email' => $like]);
+        $count->execute([
+            'business_id' => $businessId, 'name' => $like, 'gstin' => $like,
+            'phone' => $like, 'email' => $like,
+        ]);
         return ['rows' => $rows, 'total' => (int) $count->fetchColumn()];
     }
 
-    public function find(int $companyId): ?array
+    public function find(int $businessId, int $companyId): ?array
     {
-        $statement = $this->pdo->prepare('SELECT * FROM companies WHERE company_id = :id');
-        $statement->execute(['id' => $companyId]);
+        $statement = $this->pdo->prepare(
+            'SELECT * FROM companies WHERE business_id = :business_id AND company_id = :id'
+        );
+        $statement->execute(['business_id' => $businessId, 'id' => $companyId]);
         $row = $statement->fetch();
         return is_array($row) ? $row : null;
     }
 
-    public function allForSelect(): array
+    public function allForSelect(int $businessId): array
     {
-        return $this->pdo->query(
-            'SELECT company_id, company_name FROM companies ORDER BY company_name, company_id'
-        )->fetchAll();
+        $statement = $this->pdo->prepare(
+            'SELECT company_id, company_name, gstin FROM companies
+             WHERE business_id = :business_id ORDER BY company_name, company_id'
+        );
+        $statement->execute(['business_id' => $businessId]);
+        return $statement->fetchAll();
     }
 
-    public function ledger(int $companyId, string $from, string $to, string $status): array
+    public function ledger(int $businessId, int $companyId, string $from, string $to, string $status): array
     {
-        $conditions = ['i.company_id = :company_id'];
-        $parameters = ['company_id' => $companyId];
+        $conditions = ['i.business_id = :business_id', 'i.company_id = :company_id'];
+        $parameters = ['business_id' => $businessId, 'company_id' => $companyId];
         if ($from !== '') { $conditions[] = 'i.invoice_date >= :date_from'; $parameters['date_from'] = $from; }
         if ($to !== '') { $conditions[] = 'i.invoice_date <= :date_to'; $parameters['date_to'] = $to; }
         if ($status !== '') {
@@ -106,14 +115,14 @@ final class Company
     {
         return intdiv($amount, 100) . '.' . str_pad((string) ($amount % 100), 2, '0', STR_PAD_LEFT);
     }
-    public function gstinExists(string $gstin, ?int $exceptId = null): bool
+    public function gstinExists(int $businessId, string $gstin, ?int $exceptId = null): bool
     {
-        $sql = 'SELECT 1 FROM companies WHERE gstin = :gstin';
+        $sql = 'SELECT 1 FROM companies WHERE business_id = :business_id AND gstin = :gstin';
         if ($exceptId !== null) {
             $sql .= ' AND company_id <> :except_id';
         }
         $statement = $this->pdo->prepare($sql . ' LIMIT 1');
-        $parameters = ['gstin' => $gstin];
+        $parameters = ['business_id' => $businessId, 'gstin' => $gstin];
         if ($exceptId !== null) {
             $parameters['except_id'] = $exceptId;
         }
@@ -121,30 +130,33 @@ final class Company
         return $statement->fetchColumn() !== false;
     }
 
-    public function create(array $company): int
+    public function create(int $businessId, array $company): int
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO companies (company_name, gstin, phone, email, address)
-             VALUES (:company_name, :gstin, :phone, :email, :address)'
+            'INSERT INTO companies (business_id, company_name, gstin, phone, email, address)
+             VALUES (:business_id, :company_name, :gstin, :phone, :email, :address)'
         );
-        $statement->execute($company);
+        $statement->execute($company + ['business_id' => $businessId]);
         return (int) $this->pdo->lastInsertId();
     }
 
-    public function update(int $companyId, array $company): void
+    public function update(int $businessId, int $companyId, array $company): void
     {
+        $company['business_id'] = $businessId;
         $company['company_id'] = $companyId;
         $statement = $this->pdo->prepare(
             'UPDATE companies SET company_name = :company_name, gstin = :gstin,
              phone = :phone, email = :email, address = :address
-             WHERE company_id = :company_id'
+             WHERE business_id = :business_id AND company_id = :company_id'
         );
         $statement->execute($company);
     }
 
-    public function delete(int $companyId): void
+    public function delete(int $businessId, int $companyId): void
     {
-        $statement = $this->pdo->prepare('DELETE FROM companies WHERE company_id = :id');
-        $statement->execute(['id' => $companyId]);
+        $statement = $this->pdo->prepare(
+            'DELETE FROM companies WHERE business_id = :business_id AND company_id = :id'
+        );
+        $statement->execute(['business_id' => $businessId, 'id' => $companyId]);
     }
 }

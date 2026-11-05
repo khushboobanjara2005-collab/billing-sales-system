@@ -9,9 +9,9 @@ final class Payment
 {
     public function __construct(private PDO $pdo) {}
 
-    public function paginate(int $companyId, string $method, string $from, string $to, int $limit, int $offset): array
+    public function paginate(int $businessId, int $companyId, string $method, string $from, string $to, int $limit, int $offset): array
     {
-        [$where, $parameters] = $this->filters($companyId, $method, $from, $to);
+        [$where, $parameters] = $this->filters($businessId, $companyId, $method, $from, $to);
         $count = $this->pdo->prepare(
             'SELECT COUNT(*) FROM payments p JOIN invoices i ON i.invoice_id = p.invoice_id ' . $where
         );
@@ -21,7 +21,7 @@ final class Payment
             'SELECT p.payment_id, p.payment_date, p.amount, p.payment_method,
                     i.invoice_id, i.invoice_number, c.company_name
              FROM payments p JOIN invoices i ON i.invoice_id = p.invoice_id
-             JOIN companies c ON c.company_id = i.company_id ' . $where .
+             JOIN companies c ON c.company_id = i.company_id AND c.business_id = i.business_id ' . $where .
             ' ORDER BY p.payment_date DESC, p.payment_id DESC LIMIT :limit OFFSET :offset'
         );
         foreach ($parameters as $key => $value) $statement->bindValue(':' . $key, $value);
@@ -31,34 +31,42 @@ final class Payment
         return ['rows' => $statement->fetchAll(), 'total' => $total];
     }
 
-    public function findDetails(int $paymentId): ?array
+    public function findDetails(int $businessId, int $paymentId): ?array
     {
         $statement = $this->pdo->prepare(
             'SELECT p.*, i.invoice_number, i.invoice_id, c.company_name
              FROM payments p JOIN invoices i ON i.invoice_id = p.invoice_id
-             JOIN companies c ON c.company_id = i.company_id WHERE p.payment_id = :id'
+             JOIN companies c ON c.company_id = i.company_id AND c.business_id = i.business_id
+             WHERE i.business_id = :business_id AND p.payment_id = :id'
         );
-        $statement->execute(['id' => $paymentId]);
+        $statement->execute(['business_id' => $businessId, 'id' => $paymentId]);
         $row = $statement->fetch();
         return is_array($row) ? $row : null;
     }
 
-    public function invoicesForSelect(): array
+    public function invoicesForSelect(int $businessId): array
     {
-        return $this->pdo->query(
+        $statement = $this->pdo->prepare(
             'SELECT i.invoice_id, i.invoice_number, c.company_name, i.total_amount,
                     COALESCE(p.paid_amount, 0.00) AS paid_amount,
                     i.total_amount - COALESCE(p.paid_amount, 0.00) AS pending_amount
-             FROM invoices i JOIN companies c ON c.company_id = i.company_id
+             FROM invoices i JOIN companies c
+               ON c.company_id = i.company_id AND c.business_id = i.business_id
              LEFT JOIN (SELECT invoice_id, SUM(amount) paid_amount FROM payments GROUP BY invoice_id) p
-             ON p.invoice_id = i.invoice_id ORDER BY i.invoice_date DESC, i.invoice_id DESC'
-        )->fetchAll();
+             ON p.invoice_id = i.invoice_id WHERE i.business_id = :business_id
+             ORDER BY i.invoice_date DESC, i.invoice_id DESC'
+        );
+        $statement->execute(['business_id' => $businessId]);
+        return $statement->fetchAll();
     }
 
-    public function delete(int $paymentId): void
+    public function delete(int $businessId, int $paymentId): void
     {
-        $statement = $this->pdo->prepare('DELETE FROM payments WHERE payment_id = :id');
-        $statement->execute(['id' => $paymentId]);
+        $statement = $this->pdo->prepare(
+            'DELETE p FROM payments p JOIN invoices i ON i.invoice_id = p.invoice_id
+             WHERE i.business_id = :business_id AND p.payment_id = :id'
+        );
+        $statement->execute(['business_id' => $businessId, 'id' => $paymentId]);
     }
 
     public function totalForInvoice(int $invoiceId): string
@@ -96,10 +104,10 @@ final class Payment
         return (int) $this->pdo->lastInsertId();
     }
 
-    private function filters(int $companyId, string $method, string $from, string $to): array
+    private function filters(int $businessId, int $companyId, string $method, string $from, string $to): array
     {
-        $conditions = [];
-        $parameters = [];
+        $conditions = ['i.business_id = :business_id'];
+        $parameters = ['business_id' => $businessId];
         if ($companyId > 0) { $conditions[] = 'i.company_id = :company_id'; $parameters['company_id'] = $companyId; }
         if ($method !== '') { $conditions[] = 'p.payment_method = :method'; $parameters['method'] = $method; }
         if ($from !== '') { $conditions[] = 'p.payment_date >= :date_from'; $parameters['date_from'] = $from; }

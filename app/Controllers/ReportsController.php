@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\View;
+use App\Core\BusinessContext;
 use App\Models\Reporting;
 use DateTimeImmutable;
 
@@ -20,9 +21,9 @@ final class ReportsController
         if ($error !== '') { $from = ''; $to = ''; }
         View::render('reports/index', [
             'title' => 'Reports', 'dateFrom' => $from, 'dateTo' => $to, 'dateError' => $error,
-            'sales' => $this->reports->salesSummary($from, $to),
-            'companies' => $this->reports->companyOutstanding(),
-            'methods' => $this->reports->paymentMethods($from, $to),
+            'sales' => $this->reports->salesSummary(BusinessContext::id(), $from, $to),
+            'companies' => $this->reports->companyOutstanding(BusinessContext::id()),
+            'methods' => $this->reports->paymentMethods(BusinessContext::id(), $from, $to),
         ]);
     }
 

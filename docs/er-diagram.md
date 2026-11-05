@@ -1,65 +1,75 @@
 # Entity-Relationship Diagram
 
-The database contains four InnoDB tables. A company can exist before it has
-invoices, and an invoice can exist without payment rows. The invoice form
-requires at least one item, although the database relationship itself permits
-zero items.
+The diagram shows account ownership and business-level separation. Companies
+and invoices store the active business ID; invoice items and payments are
+scoped through their parent invoice. The legacy `seller_profile` is only used
+once to initialize the first business.
 
 ```mermaid
 erDiagram
-    COMPANIES ||--o{ INVOICES : issues
+    USERS ||--o{ BUSINESSES : owns
+    BUSINESSES ||--o{ COMPANIES : manages
+    BUSINESSES ||--o{ INVOICES : issues
+    COMPANIES ||--o{ INVOICES : billed_to
     INVOICES ||--o{ INVOICE_ITEMS : contains
     INVOICES ||--o{ PAYMENTS : receives
-
+    USERS {
+        int user_id PK
+        varchar full_name
+        varchar email UK
+        varchar password_hash
+    }
+    BUSINESSES {
+        int business_id PK
+        int owner_user_id FK
+        varchar business_name
+        varchar gstin
+        varchar invoice_prefix
+        int next_invoice_number
+    }
     COMPANIES {
-        int_unsigned company_id PK
-        varchar_150 company_name
-        varchar_15 gstin UK
-        varchar_20 phone
-        varchar_254 email
-        text address
-        timestamp created_at
+        int company_id PK
+        int business_id FK
+        varchar company_name
+        varchar gstin
+        varchar phone
+        varchar email
     }
     INVOICES {
-        int_unsigned invoice_id PK
-        varchar_50 invoice_number UK
-        int_unsigned company_id FK
+        int invoice_id PK
+        int business_id FK
+        int company_id FK
+        varchar invoice_number
         date invoice_date
-        decimal_12_2 subtotal
-        decimal_5_2 cgst_rate
-        decimal_5_2 sgst_rate
-        decimal_12_2 cgst
-        decimal_12_2 sgst
-        decimal_12_2 total_amount
-        timestamp created_at
+        decimal total_amount
     }
     INVOICE_ITEMS {
-        int_unsigned item_id PK
-        int_unsigned invoice_id FK
-        varchar_255 description
-        decimal_10_3 quantity
-        decimal_12_2 rate
-        decimal_12_2 line_total
+        int item_id PK
+        int invoice_id FK
+        varchar weigh_bridge_serial
+        date item_date
+        decimal quantity
+        decimal rate
+        decimal line_total
     }
     PAYMENTS {
-        int_unsigned payment_id PK
-        int_unsigned invoice_id FK
+        int payment_id PK
+        int invoice_id FK
         date payment_date
-        decimal_12_2 amount
-        varchar_50 payment_method
-        timestamp created_at
+        decimal amount
+        varchar payment_method
     }
 ```
 
-`||--o{` means one parent row can be related to zero or many child rows, while
+`||--o{` means one parent can be related to zero or many child rows, while
 every child belongs to exactly one parent. Company deletion is restricted
 while invoices exist. Deleting an invoice cascades to its items; an invoice
 with payments cannot be deleted. Paid amount, pending balance, and payment
-status are derived from payment rows and are not stored columns.
+status are derived from payment rows.
 
 ## PNG for Word / PDF
 
-The Mermaid source above is retained for editing. This local PNG is included for
-Word documents and PDF exports.
+The Mermaid source above is current. The included PNG is an older four-table
+snapshot; regenerate it from this Mermaid source before using it in a report.
 
 ![Entity-relationship diagram](images/er-diagram.png)

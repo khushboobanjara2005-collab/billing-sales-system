@@ -4,6 +4,8 @@ use App\Core\View;
 $currentRoute = (string) ($_GET['r'] ?? '');
 $navigation = [
     'Dashboard' => 'dashboard',
+    'Business profile' => 'businesses/edit',
+    'Add business' => 'businesses/create',
     'Companies' => 'companies/index',
     'Invoices' => 'invoices/index',
     'Payments' => 'payments/index',

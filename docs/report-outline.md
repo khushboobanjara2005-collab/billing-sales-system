@@ -31,9 +31,9 @@ HTML, CSS, and vanilla JavaScript for a local XAMPP environment.
 ## Problem Definition
 
 Manual billing records make it difficult to keep invoice totals, payment
-history, and pending balances consistent. This project provides a central
-database and simple screens for maintaining those related records and viewing
-derived summaries.
+history, and pending balances consistent. This project adds secure user
+accounts and separates each owner's businesses and billing records in a central
+database.
 
 ## Objectives
 
@@ -43,15 +43,16 @@ derived summaries.
 - Show invoice payment status and company-wise outstanding balances from
   payment history.
 - Provide dashboard summaries, date-range reports, and print-friendly views.
+- Authenticate users and restrict each request to an owned active business.
 
 ## Scope
 
-The current application includes companies, invoices and invoice items,
-payments, a company ledger, dashboard summaries, and reports. Invoice printing
-uses the browser's print dialog and can be saved as PDF by the user. The
-application is designed for local demonstration. It has no login or
-authorization, and the payment module does not include payment editing or
-free-text search.
+The current application includes account registration/login, multiple
+businesses per user, companies, invoices and invoice items, payments, a company
+ledger, dashboard summaries, and reports. Invoice printing uses the browser's
+print dialog and can be saved as PDF. Password-reset email delivery and shared
+business memberships are not implemented. Payment update and free-text search
+are also out of scope.
 
 ## Technology Used
 
@@ -67,9 +68,10 @@ free-text search.
 an editor such as VS Code. Configure `.env` with the local database settings;
 the DB port must match the XAMPP Control Panel.
 
-**Database:** Import `database/database.sql` to create `billing_sales_db` and
-the four related tables. The demo seed scripts are optional and must be imported
-manually in dependency order.
+**Database:** Import `database/database.sql` to create `billing_sales_db`,
+account/business tables, and transactional tables. Existing installations use
+additive migration 003 after migrations 001 and 002. Demo seeds are optional
+and imported manually after registration.
 
 **Hardware:** A computer capable of running XAMPP and a modern browser is
 sufficient for a local academic demonstration. Exact minimum hardware
@@ -78,20 +80,22 @@ requirements depend on the installed XAMPP and operating system versions.
 ## System Analysis & Design
 
 The application uses a lightweight MVC-style organization. `public/index.php`
-routes requests, controllers coordinate input and views, models execute
-prepared SQL statements, and invoice/payment services enforce business rules
-and transactions. Views escape dynamic output.
+checks authentication and the active owned business before routing requests.
+Controllers coordinate input and views, models execute scoped prepared SQL,
+and invoice/payment services enforce business rules and transactions. Views
+escape dynamic output.
 
-The four tables are `companies`, `invoices`, `invoice_items`, and `payments`.
-A company can have multiple invoices; each invoice can have multiple line
-items and payments. See [`er-diagram.md`](./er-diagram.md),
+The main data tables are `users`, `businesses`, `companies`, `invoices`,
+`invoice_items`, and `payments`, with installation/login-support tables. A user
+owns businesses, each business has companies/invoices, and each invoice can
+have multiple line items and payments. See [`er-diagram.md`](./er-diagram.md),
 [`dfd-level-0.md`](./dfd-level-0.md), [`dfd-level-1.md`](./dfd-level-1.md),
 and [`table-structure.md`](./table-structure.md).
 
 Invoice values are calculated on the server using integer paise. Payment
-recording locks the invoice row, checks the outstanding amount, and inserts
-the payment in one transaction. Paid amount, pending balance, and payment
-status are derived and not stored as separate columns.
+recording locks the active-business invoice, checks its outstanding amount,
+and inserts the payment in one transaction. Paid amount, pending balance, and
+payment status are derived and not stored as separate columns.
 
 ### ER diagram
 
@@ -107,7 +111,7 @@ status are derived and not stored as separate columns.
 
 ### System flowchart
 
-![Login-less system flowchart](images/system-flowchart.png)
+![System flowchart](images/system-flowchart.png)
 
 ### Database table structure
 
@@ -117,6 +121,8 @@ status are derived and not stored as separate columns.
 
 - **Dashboard:** total sales, received and pending amounts, company and invoice
   counts, five recent invoices, and monthly sales for six months.
+- **Accounts and businesses:** register, sign in/out, edit business settings,
+  add multiple businesses, and switch between owned businesses.
 - **Companies:** full CRUD, validation, search, and the company ledger.
 - **Invoices:** create, view, update, delete, list filters, GST calculation,
   line items, and print-to-PDF through the browser.
@@ -127,7 +133,8 @@ status are derived and not stored as separate columns.
 
 ## CRUD Operations
 
-Companies and invoices provide create, read, update, and delete operations.
+Companies and invoices provide create, read, update, and delete operations
+within the active business. Businesses provide create, read, and update.
 Company deletion is restricted when invoices exist. Invoice deletion is
 restricted when payments exist and otherwise removes its line items. Payments
 provide create, read, and delete; update and free-text payment search are not
@@ -151,20 +158,21 @@ Do not include real customer or financial information in submitted screenshots.
 
 Execute and record manual results in [`test-cases.md`](./test-cases.md). The
 table intentionally leaves Actual and Pass/Fail for the tester. Include
-evidence for validation, CSRF, invoice transaction behavior, overpayment
-rejection, delete restrictions, date filters, and print layouts.
+evidence for authentication, access control, business isolation, validation,
+CSRF, invoice transaction behavior, overpayment rejection, delete restrictions,
+date filters, and print layouts.
 
 ## Conclusion
 
-The project connects company, invoice, item, and payment records in a small PHP
-and MySQL application. It derives collection status from payment history and
-provides operational CRUD screens together with dashboard, ledger, and report
+The project connects user-owned business, company, invoice, item, and payment
+records in a small PHP and MySQL application. It derives collection status from
+payment history and provides scoped CRUD screens, dashboard, ledger, and report
 views.
 
 ## Future Scope
 
-- Add login, password hashing, authorization, logout, and access-control tests
-  before use beyond a local demonstration.
+- Configure email delivery for password recovery and add secure reset tokens.
+- Add shared business memberships only if later required.
 - Add payment update/search only if required by a later project specification.
 - Extend reports or add export features if permitted by the project scope.
 - Conduct additional testing with representative data and user feedback.

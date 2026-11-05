@@ -6,7 +6,10 @@ $query['r'] = 'invoices/index';
 ?>
 <section class="page-heading">
     <div><p class="eyebrow">BILLING</p><h1>Invoices</h1><p class="muted">Create and track customer invoices.</p></div>
-    <a class="button primary" href="<?= View::escape($baseUrl) ?>/index.php?r=invoices/create">Create invoice</a>
+    <div class="heading-actions">
+        <a class="button secondary" href="<?= View::escape($baseUrl) ?>/index.php?r=seller-profile/edit">Seller Profile</a>
+        <a class="button primary" href="<?= View::escape($baseUrl) ?>/index.php?r=invoices/create">Create invoice</a>
+    </div>
 </section>
 <section class="panel">
     <form class="filter-form" method="get" action="<?= View::escape($baseUrl) ?>/index.php">

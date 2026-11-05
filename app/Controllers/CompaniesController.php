@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Csrf;
+use App\Core\BusinessContext;
 use App\Core\Flash;
 use App\Core\Validator;
 use App\Core\View;
@@ -19,7 +20,7 @@ final class CompaniesController
     public function index(): void {
         $search = trim((string) ($_GET['q'] ?? ''));
         $page = max(1, filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT) ?: 1);
-        $result = $this->companies->paginate($search, self::PAGE_SIZE, ($page - 1) * self::PAGE_SIZE);
+        $result = $this->companies->paginate(BusinessContext::id(), $search, self::PAGE_SIZE, ($page - 1) * self::PAGE_SIZE);
         View::render('companies/index', [
             'title' => 'Companies', 'companies' => $result['rows'], 'total' => $result['total'],
             'page' => $page, 'pages' => max(1, (int) ceil($result['total'] / self::PAGE_SIZE)),
@@ -31,10 +32,10 @@ final class CompaniesController
     public function create(): void { $this->form('Create company', [], []); }
 
     public function store(): void {
-        $result = Validator::company($_POST, fn (string $gstin): bool => $this->companies->gstinExists($gstin));
+        $result = Validator::company($_POST, fn (string $gstin): bool => $this->companies->gstinExists(BusinessContext::id(), $gstin));
         if ($result['errors'] !== []) $this->invalidForm('companies/create', $result);
         try {
-            $this->companies->create($this->databaseValues($result['values']));
+            $this->companies->create(BusinessContext::id(), $this->databaseValues($result['values']));
             $this->redirectWithMessage('companies/index', 'Company created successfully.');
         } catch (PDOException $error) {
             $this->saveError($error, 'companies/create', $result['values']);
@@ -48,11 +49,11 @@ final class CompaniesController
 
     public function update(): void {
         $id = $this->postId();
-        if ($this->companies->find($id) === null) $this->notFound();
-        $result = Validator::company($_POST, fn (string $gstin): bool => $this->companies->gstinExists($gstin, $id));
+        if ($this->companies->find(BusinessContext::id(), $id) === null) $this->notFound();
+        $result = Validator::company($_POST, fn (string $gstin): bool => $this->companies->gstinExists(BusinessContext::id(), $gstin, $id));
         if ($result['errors'] !== []) $this->invalidForm('companies/edit&id=' . $id, $result);
         try {
-            $this->companies->update($id, $this->databaseValues($result['values']));
+            $this->companies->update(BusinessContext::id(), $id, $this->databaseValues($result['values']));
             $this->redirectWithMessage('companies/index', 'Company updated successfully.');
         } catch (PDOException $error) {
             $this->saveError($error, 'companies/edit&id=' . $id, $result['values']);
@@ -62,7 +63,7 @@ final class CompaniesController
     public function delete(): void {
         $id = $this->postId();
         try {
-            $this->companies->delete($id);
+            $this->companies->delete(BusinessContext::id(), $id);
             $this->redirectWithMessage('companies/index', 'Company deleted successfully.');
         } catch (PDOException $error) {
             app_log_error($error);
@@ -119,7 +120,7 @@ final class CompaniesController
 
     private function companyFromQuery(): array {
         $id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
-        $company = $id !== false && $id > 0 ? $this->companies->find((int) $id) : null;
+        $company = $id !== false && $id > 0 ? $this->companies->find(BusinessContext::id(), (int) $id) : null;
         if ($company === null) $this->notFound();
         return $company;
     }

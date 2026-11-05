@@ -1,19 +1,23 @@
 # Data Flow Diagram — Level 0
 
-This context-level view shows the Administrator, the system boundary, and the
-four database stores used by the implemented modules.
+This context-level view shows the user, the system boundary, account/business
+stores, and the four transactional data stores.
 
 ```mermaid
 flowchart LR
     Admin["External entity: Admin"]
     System(["0. Billing and Sales Management System"])
-    Companies[("D1 Companies")]
-    Invoices[("D2 Invoices")]
-    Items[("D3 Invoice Items")]
-    Payments[("D4 Payments")]
+    Users[("D0 Users and login attempts")]
+    Businesses[("D1 Businesses")]
+    Companies[("D2 Companies")]
+    Invoices[("D3 Invoices")]
+    Items[("D4 Invoice Items")]
+    Payments[("D5 Payments")]
 
-    Admin -->|"Company, invoice, and payment requests; search and report filters"| System
-    System -->|"Screens, validation messages, dashboard, ledger, reports, printable invoice"| Admin
+    Admin -->|"Credentials, business settings, company, invoice, payment and report requests"| System
+    System -->|"Authenticated workspace, validation messages, dashboard, reports and printable invoice"| Admin
+    System <-->|"Account registration, authentication and login throttling"| Users
+    System <-->|"Owned business profile and active business context"| Businesses
     System -->|"Company CRUD"| Companies
     Companies -->|"Company records"| System
     System -->|"Invoice headers"| Invoices
@@ -24,9 +28,8 @@ flowchart LR
     Payments -->|"Payment history and derived balances"| System
 ```
 
-There is no authentication process in the current system; the Administrator
-accesses the application directly. Database access is through PDO prepared
-statements in the PHP models.
+Each module query is restricted to the active business owned by the signed-in
+user. Database access uses PDO prepared statements in the PHP models.
 
 ## PNG for Word / PDF
 

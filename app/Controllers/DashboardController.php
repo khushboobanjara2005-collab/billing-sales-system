@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\View;
+use App\Core\BusinessContext;
 use App\Models\Reporting;
 use DateTimeImmutable;
 
@@ -15,7 +16,7 @@ final class DashboardController
     {
         $firstMonth = (new DateTimeImmutable('first day of this month'))
             ->modify('-5 months')->format('Y-m-01');
-        $data = $this->reports->dashboard($firstMonth);
+        $data = $this->reports->dashboard(BusinessContext::id(), $firstMonth);
         $monthlyByKey = [];
         foreach ($data['monthly'] as $row) {
             $monthlyByKey[$row['month_key']] = $row['sales'];

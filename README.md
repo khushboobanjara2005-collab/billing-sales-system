@@ -17,7 +17,8 @@ requirement.
 1. Keep the project at `C:\xampp\htdocs\billing-sales-system`.
 2. Start Apache and MySQL in the XAMPP Control Panel.
 3. Open `http://localhost/phpmyadmin/`, choose **Import**, and import
-   `database/database.sql`. It creates `billing_sales_db` and the four tables.
+   `database/database.sql`. It creates `billing_sales_db`, account/business
+   tables, invoice tables, and an empty legacy seller-profile table.
 4. In PowerShell, from the project directory, create the local environment file:
 
    ```powershell
@@ -40,6 +41,9 @@ No virtual host or URL rewriting is required. A virtual host pointing to
 - Dashboard: `http://localhost/billing-sales-system/public/index.php?r=dashboard`
 - Companies: `http://localhost/billing-sales-system/public/index.php?r=companies/index`
 - Invoices: `http://localhost/billing-sales-system/public/index.php?r=invoices/index`
+- Business profile: `http://localhost/billing-sales-system/public/index.php?r=businesses/edit`
+- Create account: `http://localhost/billing-sales-system/public/index.php?r=auth/register`
+- Sign in: `http://localhost/billing-sales-system/public/index.php?r=auth/login`
 - Payments: `http://localhost/billing-sales-system/public/index.php?r=payments/index`
 - Reports: `http://localhost/billing-sales-system/public/index.php?r=reports`
 - Health check: `http://localhost/billing-sales-system/public/index.php?r=health`
@@ -52,17 +56,36 @@ summaries. Invoice and report pages can be printed using the browser; choose
 
 ## Database and demo data
 
-The schema is in `database/database.sql`; the initial migration is in
-`database/migrations/001_create_initial_tables.sql`. Optional sample data must
-be imported manually in this order using phpMyAdmin:
+The complete schema is in `database/database.sql`. For an existing installation
+that already has migrations 001 and 002, apply
+`database/migrations/003_auth_multi_business.sql` once. It adds users,
+businesses, login throttling, and temporarily nullable tenant keys while
+preserving current company, invoice, item, and payment rows. Fresh imports
+require tenant keys. Do not re-import `database.sql` into an existing database.
+
+The first account must be registered from this computer while the database has
+no users. Its business is initialized from the existing seller profile, and
+all previously unassigned companies and invoices are attached to that first
+business in the same registration transaction. Payments and invoice items
+remain associated through their invoice. Complete the business profile,
+including jurisdiction and bank details, before issuing real invoices. The
+first-registration page rejects remote requests to protect the legacy-data
+claim. After setup, users can register separate accounts and add multiple
+businesses; business records are filtered by the authenticated owner and the
+selected business.
+
+Existing installations apply `database/migrations/002_wholesale_invoice_layout.sql`
+once before migration 003 if they have not already added weighbridge fields,
+GST summary columns, and `seller_profile`. Optional demo data must be imported
+manually after an account/business exists, in this order:
 
 1. `database/seeds/demo_data.sql`
 2. `database/seeds/demo_invoices.sql`
 3. `database/seeds/demo_payments.sql`
 
-The seeds are not imported automatically. Import them only into a suitable
-local/demo database; company and invoice records are required before their
-dependent sample records.
+The seeds are not imported automatically. They target the first business in
+the local demo database and must only be imported into a suitable demo
+installation; company and invoice records are required before dependent rows.
 
 ## Testing
 
@@ -79,13 +102,13 @@ fill its Actual and Pass/Fail columns during your own testing.
 ## Project structure
 
 - `app/Controllers/` — request coordination for companies, invoices, payments,
-  dashboard, reports, and company ledger.
+  accounts, business settings, dashboard, reports, and company ledger.
 - `app/Models/` — PDO prepared-statement queries for database tables and
   read-only reporting summaries.
 - `app/Services/` — invoice calculations and transactional invoice/payment
   business rules.
 - `app/Core/` — database connection, query-string router, views, sessions,
-  validation, CSRF, and flash-message support.
+  authentication/business context, validation, CSRF, and flash-message support.
 - `app/Helpers/` — shared formatting helper.
 - `config/`, `database/`, `public/`, `resources/views/`, `storage/`, `tests/`,
   and `docs/` — configuration conventions, SQL, web assets, templates, logs,
@@ -101,10 +124,10 @@ fill its Actual and Pass/Fail columns during your own testing.
 - [Academic report outline](docs/report-outline.md)
 - [Architecture](docs/architecture.md) and [database design](docs/database-design.md)
 
-PNG diagrams for Word/PDF are stored in [`docs/images/`](docs/images/):
-ER diagram, system flowchart, DFD Level 0, DFD Level 1, and table structure.
-The Markdown pages retain Mermaid source where applicable and link to their
-local PNG versions.
+PNG diagrams for Word/PDF are stored in [`docs/images/`](docs/images/), but
+those exports predate the latest authentication and multi-business changes.
+The Markdown Mermaid sources are authoritative; regenerate the PNGs locally
+before using them in a report.
 
 - [ER diagram PNG](docs/images/er-diagram.png)
 - [System flowchart PNG](docs/images/system-flowchart.png)
@@ -119,6 +142,10 @@ or filters. Payments can be recorded, viewed, filtered by company/method/date,
 and deleted, but payment update and free-text payment search are not currently
 implemented. Reports are read-only.
 
-There is **no authentication or authorization**. The project is for local
-academic demonstration and must not be exposed as a public or shared
-production application. See [architecture notes](docs/architecture.md).
+Authentication uses password hashes, strict PHP sessions, CSRF-protected POST
+actions, login throttling, and owner-checked business switching. Forgot-password
+shows a generic help screen, but email-based recovery is **not configured**
+because this local XAMPP project has no mail delivery setup. The project is
+still an academic application; perform a security review and configure backups,
+HTTPS, and mail delivery before public deployment. See
+[architecture notes](docs/architecture.md).

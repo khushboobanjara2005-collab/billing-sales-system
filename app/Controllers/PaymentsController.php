@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Csrf;
+use App\Core\BusinessContext;
 use App\Core\Flash;
 use App\Core\Router;
 use App\Core\View;
@@ -26,11 +27,11 @@ final class PaymentsController
         $from = $this->dateFilter('date_from');
         $to = $this->dateFilter('date_to');
         $page = max(1, filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT) ?: 1);
-        $result = $this->payments->paginate($companyId, $method, $from, $to, self::PAGE_SIZE, ($page - 1) * self::PAGE_SIZE);
+        $result = $this->payments->paginate(BusinessContext::id(), $companyId, $method, $from, $to, self::PAGE_SIZE, ($page - 1) * self::PAGE_SIZE);
         View::render('payments/index', [
             'title' => 'Payments', 'payments' => $result['rows'], 'total' => $result['total'],
             'page' => $page, 'pages' => max(1, (int) ceil($result['total'] / self::PAGE_SIZE)),
-            'companies' => $this->companies->allForSelect(),
+            'companies' => $this->companies->allForSelect(BusinessContext::id()),
             'filters' => ['company_id' => $companyId, 'method' => $method, 'date_from' => $from, 'date_to' => $to],
             'message' => Flash::pull('message'), 'messageType' => Flash::pull('message_type', 'success'),
         ]);
@@ -49,7 +50,7 @@ final class PaymentsController
         $errors = $this->validate($values);
         if ($errors !== []) $this->invalid($values, $errors);
         try {
-            $id = $this->service->record((int) $values['invoice_id'], $values['payment_date'], $values['amount'], $values['payment_method']);
+            $id = $this->service->record(BusinessContext::id(), (int) $values['invoice_id'], $values['payment_date'], $values['amount'], $values['payment_method']);
             $this->redirectMessage('payments/show&id=' . $id, 'Payment recorded successfully.');
         } catch (DomainException|InvalidArgumentException $error) {
             $this->invalid($values, [], $error->getMessage());
@@ -61,7 +62,7 @@ final class PaymentsController
 
     public function show(): void {
         $id = $this->queryId();
-        $payment = $this->payments->findDetails($id);
+        $payment = $this->payments->findDetails(BusinessContext::id(), $id);
         if ($payment === null) $this->notFound();
         View::render('payments/show', [
             'title' => 'Payment details', 'payment' => $payment,
@@ -73,7 +74,7 @@ final class PaymentsController
         $id = filter_var($_POST['payment_id'] ?? null, FILTER_VALIDATE_INT);
         if ($id === false || $id < 1) $this->notFound();
         try {
-            $this->service->delete((int) $id);
+            $this->service->delete(BusinessContext::id(), (int) $id);
             $this->redirectMessage('payments/index', 'Payment deleted successfully.');
         } catch (DomainException $error) {
             $this->redirectMessage('payments/index', 'Payment not found.', 'error');
@@ -91,7 +92,7 @@ final class PaymentsController
     private function renderForm(array $values, array $errors, ?string $message, int $invoiceId): void {
         View::render('payments/form', [
             'title' => 'Record payment', 'values' => $values, 'errors' => $errors,
-            'invoices' => $this->payments->invoicesForSelect(), 'invoiceId' => $invoiceId,
+            'invoices' => $this->payments->invoicesForSelect(BusinessContext::id()), 'invoiceId' => $invoiceId,
             'csrf' => Csrf::token(), 'message' => $message,
         ]);
     }

@@ -4,12 +4,15 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Csrf;
+use App\Core\Auth;
+use App\Core\BusinessContext;
 use App\Core\Flash;
 use App\Core\Validator;
 use App\Core\View;
 use App\Models\Company;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
+use App\Models\Business;
 use App\Services\InvoiceService;
 use DomainException;
 use InvalidArgumentException;
@@ -20,7 +23,7 @@ final class InvoicesController
     private const PAGE_SIZE = 10;
 
     public function __construct(private Invoice $invoices, private InvoiceItem $items,
-        private Company $companies, private InvoiceService $service) {}
+        private Company $companies, private Business $businesses, private InvoiceService $service) {}
     public function index(): void {
         $companyId = filter_var($_GET['company_id'] ?? 0, FILTER_VALIDATE_INT);
         $companyId = $companyId === false ? 0 : max(0, $companyId);
@@ -30,24 +33,24 @@ final class InvoicesController
         $number = is_string($_GET['number'] ?? null) ? trim($_GET['number']) : '';
         $page = max(1, filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT) ?: 1);
         $result = $this->invoices->list(
-            $number, $companyId, $from, $to, $status,
+            BusinessContext::id(), $number, $companyId, $from, $to, $status,
             self::PAGE_SIZE, ($page - 1) * self::PAGE_SIZE
         );
         View::render('invoices/index', [
             'title' => 'Invoices', 'invoices' => $result['rows'], 'total' => $result['total'],
             'page' => $page, 'pages' => max(1, (int) ceil($result['total'] / self::PAGE_SIZE)),
-            'companies' => $this->companies->allForSelect(),
+            'companies' => $this->companies->allForSelect(BusinessContext::id()),
             'filters' => ['number' => $number, 'company_id' => $companyId, 'date_from' => $from, 'date_to' => $to, 'status' => $status],
             'message' => Flash::pull('message'), 'messageType' => Flash::pull('message_type', 'success'),
         ]);
     }
     public function create(): void { $this->form('Create invoice', [], null); }
     public function store(): void {
-        $result = Validator::invoice($_POST);
+        $result = Validator::invoice($this->withBusinessDefaults($_POST));
         $this->checkCompany($result);
         if ($result['errors'] !== []) $this->invalid('invoices/create', $result);
         try {
-            $id = $this->service->create($result['values']);
+            $id = $this->service->create(BusinessContext::id(), $result['values']);
             $this->redirectMessage('invoices/show&id=' . $id, 'Invoice created successfully.');
         } catch (DomainException|InvalidArgumentException $error) {
             $this->invalid('invoices/create', $result, $error->getMessage());
@@ -58,27 +61,28 @@ final class InvoicesController
     }
     public function show(): void {
         $id = $this->queryId();
-        $invoice = $this->invoices->findDetails($id);
+        $invoice = $this->invoices->findDetails(BusinessContext::id(), $id);
         if ($invoice === null) $this->notFound();
         View::render('invoices/show', [
             'title' => 'Invoice ' . $invoice['invoice_number'], 'invoice' => $invoice,
-            'items' => $this->items->forInvoice($id), 'message' => Flash::pull('message'),
+            'items' => $this->items->forInvoice($id), 'seller' => $this->activeBusiness(),
+            'message' => Flash::pull('message'),
             'messageType' => Flash::pull('message_type', 'success'),
         ]);
     }
     public function edit(): void {
         $id = $this->queryId();
-        $invoice = $this->invoices->findDetails($id);
+        $invoice = $this->invoices->findDetails(BusinessContext::id(), $id);
         if ($invoice === null) $this->notFound();
         $this->form('Edit invoice ' . $invoice['invoice_number'], $invoice, $id, $this->items->forInvoice($id));
     }
     public function update(): void {
         $id = $this->postId();
-        $result = Validator::invoice($_POST);
+        $result = Validator::invoice($this->withBusinessDefaults($_POST));
         $this->checkCompany($result);
         if ($result['errors'] !== []) $this->invalid('invoices/edit&id=' . $id, $result);
         try {
-            $this->service->update($id, $result['values']);
+            $this->service->update(BusinessContext::id(), $id, $result['values']);
             $this->redirectMessage('invoices/show&id=' . $id, 'Invoice updated successfully.');
         } catch (DomainException|InvalidArgumentException $error) {
             $this->invalid('invoices/edit&id=' . $id, $result, $error->getMessage());
@@ -90,7 +94,7 @@ final class InvoicesController
     public function delete(): void {
         $id = $this->postId();
         try {
-            $this->service->delete($id);
+            $this->service->delete(BusinessContext::id(), $id);
             $this->redirectMessage('invoices/index', 'Invoice deleted successfully.');
         } catch (DomainException $error) {
             $message = $error->getMessage() === 'This invoice has payments.'
@@ -105,17 +109,25 @@ final class InvoicesController
     private function form(string $title, array $invoice, ?int $id, array $items = []): void {
         $old = Flash::pull('old', []);
         $errors = Flash::pull('errors', []);
+        $business = $this->activeBusiness();
+        $invoice += [
+            'cgst_rate' => (string) ($business['default_gst_rate'] ?? '2.50'),
+            'sgst_rate' => (string) ($business['default_gst_rate'] ?? '2.50'),
+        ];
         if (is_array($old)) $invoice = array_replace($invoice, $old);
         if (isset($old['items']) && is_array($old['items'])) $items = $old['items'];
         View::render('invoices/form', [
             'title' => $title, 'invoice' => $invoice, 'items' => $items, 'errors' => $errors,
-            'id' => $id, 'companies' => $this->companies->allForSelect(), 'csrf' => Csrf::token(),
+            'id' => $id, 'companies' => $this->companies->allForSelect(BusinessContext::id()), 'csrf' => Csrf::token(),
+            'seller' => $business,
             'message' => Flash::pull('message'), 'messageType' => Flash::pull('message_type', 'error'),
         ]);
     }
     private function checkCompany(array &$result): void {
         $id = (int) ($result['values']['company_id'] ?? 0);
-        if ($id > 0 && $this->companies->find($id) === null) $result['errors']['company_id'] = 'Choose an existing company.';
+        if ($id > 0 && $this->companies->find(BusinessContext::id(), $id) === null) {
+            $result['errors']['company_id'] = 'Choose an existing company.';
+        }
     }
     private function invalid(string $route, array $result, string $message = ''): void {
         Flash::set('old', $result['values']);
@@ -146,4 +158,18 @@ final class InvoicesController
         exit;
     }
     private function notFound(): void { http_response_code(404); echo 'Invoice not found.'; exit; }
+
+    private function activeBusiness(): array
+    {
+        return $this->businesses->findOwned(BusinessContext::id(), Auth::userId()) ?? [];
+    }
+
+    private function withBusinessDefaults(array $input): array
+    {
+        $business = $this->activeBusiness();
+        $defaultRate = (string) ($business['default_gst_rate'] ?? '2.50');
+        $input['cgst_rate'] = $input['cgst_rate'] ?? $defaultRate;
+        $input['sgst_rate'] = $input['sgst_rate'] ?? $defaultRate;
+        return $input;
+    }
 }

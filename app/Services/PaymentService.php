@@ -23,6 +23,7 @@ final class PaymentService
     }
 
     public function record(
+        int $businessId,
         int $invoiceId,
         string $paymentDate,
         string $amount,
@@ -42,7 +43,7 @@ final class PaymentService
 
         $this->pdo->beginTransaction();
         try {
-            $invoice = $this->invoices->findForUpdate($invoiceId);
+            $invoice = $this->invoices->findForUpdate($businessId, $invoiceId);
             if ($invoice === null) {
                 throw new DomainException('Invoice not found.');
             }
@@ -69,19 +70,19 @@ final class PaymentService
         }
     }
 
-    public function delete(int $paymentId): void
+    public function delete(int $businessId, int $paymentId): void
     {
-        $payment = $this->payments->findDetails($paymentId);
+        $payment = $this->payments->findDetails($businessId, $paymentId);
         if ($payment === null) {
             throw new DomainException('Payment not found.');
         }
 
         $this->pdo->beginTransaction();
         try {
-            if ($this->invoices->findForUpdate((int) $payment['invoice_id']) === null) {
+            if ($this->invoices->findForUpdate($businessId, (int) $payment['invoice_id']) === null) {
                 throw new DomainException('Invoice not found.');
             }
-            $this->payments->delete($paymentId);
+            $this->payments->delete($businessId, $paymentId);
             $this->pdo->commit();
         } catch (Throwable $error) {
             if ($this->pdo->inTransaction()) {
